@@ -82,8 +82,6 @@ func checkService(db *gorm.DB, s models.Service) {
 }
 
 func checkServiceWithoutAuth(db *gorm.DB, s models.Service) {
-    start := time.Now()
-
     // Create HTTP client with better configuration
     jar, _ := cookiejar.New(nil)
 
@@ -125,6 +123,7 @@ func checkServiceWithoutAuth(db *gorm.DB, s models.Service) {
     req.Header.Set("Sec-Fetch-Mode", "navigate")
     req.Header.Set("Sec-Fetch-Site", "none")
 
+    start := time.Now()
     resp, err := client.Do(req)
     duration := time.Since(start).Milliseconds()
 
@@ -148,8 +147,6 @@ func checkServiceWithoutAuth(db *gorm.DB, s models.Service) {
 }
 
 func checkServiceWithAuth(db *gorm.DB, s models.Service, auth *models.ServiceAuth) {
-    start := time.Now()
-
     // Get authenticated client
     client, err := AuthenticatedClient(auth)
     if err != nil {
@@ -177,6 +174,7 @@ func checkServiceWithAuth(db *gorm.DB, s models.Service, auth *models.ServiceAut
 
     setDefaultHeaders(req)
 
+    start := time.Now()
     resp, err := client.Do(req)
     duration := time.Since(start).Milliseconds()
 
