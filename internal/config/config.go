@@ -27,11 +27,11 @@ func Load() *App {
 	return &App{
 		Database: Database{
 			Host:     getEnv("DB_HOST", "localhost"),
-			User:     getEnv("DB_USER", "appuser"),
-			Password: getEnv("DB_PASSWORD", "appuser"),
-			Name:     getEnv("DB_NAME", "mango"),
+			User:     getEnv("DB_USER", "postgres"),
+			Password: getEnv("DB_PASSWORD", "112407"),
+			Name:     getEnv("DB_NAME", "projectDB"),
 			Port:     getEnv("DB_PORT", "5432"),
-			SSLMode:  getEnv("DB_SSLMODE", "require"),
+			SSLMode:  getEnv("DB_SSLMODE", "disable"),
 		},
 		Server: Server{
 			Port: getEnv("SERVER_PORT", "8080"),

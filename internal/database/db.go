@@ -1,12 +1,13 @@
 package database
 
 import (
-    "log"
+	"log"
 
-    "gorm.io/driver/postgres"
-    "gorm.io/gorm"
-    "manGo/internal/config"
-    "manGo/internal/models"
+	"manGo/internal/config"
+	"manGo/internal/models"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func Connect(cfg *config.Database) *gorm.DB {
@@ -18,7 +19,7 @@ func Connect(cfg *config.Database) *gorm.DB {
     log.Println("connected to database successfully")
 
     // create tables
-    if err := db.AutoMigrate(&models.Service{}, &models.Check{}, &models.ServiceAuth{}); err != nil {
+    if err := db.AutoMigrate(&models.Service{}, &models.Check{}, &models.ServiceAuth{}, &models.User{}); err != nil {
         log.Fatalf("failed to run migrations: %v", err)
     }
 
