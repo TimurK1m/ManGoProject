@@ -23,15 +23,16 @@ func main() {
 	// 🔗 связываем слои
 	userRepo := repository.NewUserRepository(db)
 	authService := service.NewAuthService(userRepo)
-	h := handler.NewHandler(authService)
 
-	// 🔐 routes
+	serviceRepo := repository.NewServiceRepository(db)
+	serviceService := service.NewServiceService(serviceRepo)
+
+	h := handler.NewHandler(authService, serviceService)
+
 	r.POST("/auth/register", h.Register)
 	r.POST("/auth/login", h.Login)
 
-	r.GET("/ping", func(c *gin.Context) {
-		c.JSON(200, gin.H{"message": "pong"})
-	})
+	r.POST("/services", h.CreateService)
 
 	r.Run(":8080")
 }

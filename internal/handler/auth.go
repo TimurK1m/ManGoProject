@@ -9,11 +9,15 @@ import (
 )
 
 type Handler struct {
-	auth *service.AuthService
+	auth    *service.AuthService
+	service *service.ServiceService
 }
 
-func NewHandler(auth *service.AuthService) *Handler {
-	return &Handler{auth: auth}
+func NewHandler(auth *service.AuthService, service *service.ServiceService) *Handler {
+	return &Handler{
+		auth:    auth,
+		service: service,
+	}
 }
 
 type registerInput struct {
