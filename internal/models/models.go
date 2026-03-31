@@ -5,6 +5,7 @@ import "time"
 type Service struct {
     ID        uint      `gorm:"primaryKey" json:"id"`
     URL       string    `json:"url"`
+    OwnerID  uint      `json:"owner_id"`
     CreatedAt time.Time `json:"created_at"`
     UpdatedAt time.Time `json:"updated_at"`
 }
