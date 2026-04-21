@@ -99,8 +99,17 @@ func listServices(db *gorm.DB) gin.HandlerFunc {
 		userIDRaw, _ := c.Get("userID")
 		roleRaw, _ := c.Get("role")
 
-		userID := userIDRaw.(uint)
-		role := roleRaw.(string)
+		userID, ok := userIDRaw.(uint)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid userID"})
+			return
+		}
+
+		role, ok := roleRaw.(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid role"})
+			return
+		}
 
 		query := db
 
