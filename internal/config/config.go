@@ -1,8 +1,11 @@
+// config.go
 package config
 
 import (
 	"fmt"
 	"os"
+
+	"github.com/joho/godotenv"
 )
 
 type Database struct {
@@ -18,12 +21,18 @@ type Server struct {
 	Port string
 }
 
+type JWT struct {
+	Secret string
+}
+
 type App struct {
 	Database Database
 	Server   Server
+	JWT      JWT
 }
 
 func Load() *App {
+	 _ = godotenv.Load()
 	return &App{
 		Database: Database{
 			Host:     getEnv("DB_HOST", "localhost"),
@@ -35,6 +44,9 @@ func Load() *App {
 		},
 		Server: Server{
 			Port: getEnv("SERVER_PORT", "8080"),
+		},
+		JWT: JWT{
+			Secret: getEnv("JWT_SECRET", "super_secret_key"),
 		},
 	}
 }
@@ -50,5 +62,6 @@ func getEnv(key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
 	}
+	
 	return defaultValue
 }

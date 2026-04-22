@@ -1,3 +1,4 @@
+// models.go
 package models
 
 import "time"
@@ -18,16 +19,16 @@ type Check struct {
     CreatedAt    time.Time `json:"created_at"`
 }
 
-// ServiceAuth represents authentication credentials for protected services
+
 type ServiceAuth struct {
     ID           uint   `gorm:"primaryKey" json:"id"`
     ServiceID    uint   `gorm:"uniqueIndex" json:"service_id"`
     LoginURL     string `json:"login_url"`
-    Username     string `json:"-"` // Hidden in JSON for security
-    Password     string `json:"-"` // Hidden in JSON for security
+    Username     string `json:"-"` 
+    Password     string `json:"-"` 
     UsernameKey  string `json:"username_key"`
     PasswordKey  string `json:"password_key"`
-    MonitorURL   string `json:"monitor_url"` // URL to monitor after login
+    MonitorURL   string `json:"monitor_url"` 
     CreatedAt    time.Time `json:"created_at"`
     UpdatedAt    time.Time `json:"updated_at"`
 }

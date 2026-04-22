@@ -1,11 +1,15 @@
+// service.go
 package handlers
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 
-	"manGo/internal/middleware" // <-- Add this import
+	"manGo/internal/config"
+	"manGo/internal/middleware"
 
 	"manGo/internal/models"
 
@@ -13,27 +17,32 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterRoutes(r *gin.Engine, db *gorm.DB) {
+type ServiceWithStatus struct {
+	models.Service
+	LastStatus sql.NullString `json:"last_status"`
+}
 
-	// Public endpoints
+func RegisterRoutes(r *gin.Engine, db *gorm.DB, cfg *config.App){
+
+	
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "server running"})
 	})
 
-	// Authentication endpoints
-	r.POST("/login", Login(db))
+	
+	r.POST("/login", Login(db, cfg))
 	r.POST("/register", Register(db))
 
-	// Protected endpoints (require JWT)
+	
 	protected := r.Group("/")
-	protected.Use(middleware.AuthMiddleware())
+	protected.Use(middleware.AuthMiddleware(cfg.JWT.Secret))
 	{
-		// Services
+		
 		protected.POST("/services", createService(db))
 		protected.GET("/services", listServices(db))
 		protected.GET("/services/:id/checks", getServiceChecks(db))
 
-		// Service authentication management
+		
 		protected.POST("/services/:id/auth", manageServiceAuth(db))
 		protected.GET("/services/:id/auth", getServiceAuth(db))
 		protected.DELETE("/services/:id/auth", deleteServiceAuth(db))
@@ -44,25 +53,29 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB) {
 	}
 }
 
-// createService handles POST /services
+
 func createService(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var service models.Service
 
-		// Get userID from context (set by AuthMiddleware)
+		
 		userIDRaw, exists := c.Get("userID")
 		if !exists {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
-		userID := userIDRaw.(uint)
+		userID, ok := userIDRaw.(uint)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
+			return
+		}
 
 		if err := c.BindJSON(&service); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON input"})
 			return
 		}
 
-		// Validate URL
+		
 		if service.URL == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "URL is required"})
 			return
@@ -72,10 +85,10 @@ func createService(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Assign owner
+		
 		service.OwnerID = userID
 
-		// Create service
+		
 		result := db.Create(&service)
 		if result.Error != nil {
 			log.Printf("handlers: failed to create service: %v", result.Error)
@@ -90,18 +103,16 @@ func createService(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// listServices handles GET /services with filter
+
 func listServices(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var services []models.Service
 
-		// Get user info
 		userIDRaw, _ := c.Get("userID")
 		roleRaw, _ := c.Get("role")
 
 		userID, ok := userIDRaw.(uint)
 		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid userID"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 			return
 		}
 
@@ -111,63 +122,65 @@ func listServices(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		query := db
-
-		// Role filtering
-		if role != "admin" {
-			query = query.Where("owner_id = ?", userID)
-		}
-
-		// Get status filter from query param
 		statusFilter := c.Query("status")
 
-		// Load services
-		if err := query.Find(&services).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch services"})
-			return
+		var services []ServiceWithStatus
+
+		baseQuery := `
+			SELECT s.*, c.status as last_status
+			FROM services s
+			LEFT JOIN LATERAL (
+				SELECT status
+				FROM checks
+				WHERE service_id = s.id
+				ORDER BY created_at DESC
+				LIMIT 1
+			) c ON true
+		`
+
+		
+		if role != "admin" {
+			baseQuery += " WHERE s.owner_id = ?"
+			if err := db.Raw(baseQuery, userID).Scan(&services).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch services"})
+				return
+			}
+		} else {
+			if err := db.Raw(baseQuery).Scan(&services).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch services"})
+				return
+			}
 		}
 
-		// If no filter → return all
-		if statusFilter == "" {
-			c.JSON(http.StatusOK, gin.H{
-				"count":    len(services),
-				"services": services,
-			})
-			return
-		}
-
-		// Filter services by last check status
-		var filtered []models.Service
-
-		for _, s := range services {
-			var lastCheck models.Check
-
-			err := db.Where("service_id = ?", s.ID).
-				Order("created_at DESC").
-				First(&lastCheck).Error
-
-			if err != nil {
-				continue
+		
+		if statusFilter != "" {
+			var filtered []ServiceWithStatus
+			for _, s := range services {
+				if s.LastStatus.Valid && s.LastStatus.String == statusFilter {
+					filtered = append(filtered, s)
+				}
 			}
-
-			if lastCheck.Status == statusFilter {
-				filtered = append(filtered, s)
-			}
+			services = filtered
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"count":    len(filtered),
-			"services": filtered,
+			"count":    len(services),
+			"services": services,
 		})
 	}
 }
 
-// getServiceChecks handles GET /services/:id/checks
 func getServiceChecks(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		serviceID := c.Param("id")
+		
+		
+		serviceID, ok := parseID(c)
+		if !ok { return }
 
-		// Check if user has access to this service
+
+
+
+		
 		if !canAccessService(c, db, serviceID) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "you do not have access to this service"})
 			return
@@ -192,12 +205,12 @@ func getServiceChecks(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// manageServiceAuth handles POST /services/:id/auth (create or update auth)
+
 func manageServiceAuth(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		serviceID := c.Param("id")
 
-		// Check ownership or admin
+		
 		if !canManageService(c, db, serviceID) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "you do not have permission to manage auth for this service"})
 			return
@@ -217,17 +230,17 @@ func manageServiceAuth(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Check if service exists
+		
 		var service models.Service
 		if err := db.First(&service, serviceID).Error; err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
 			return
 		}
 
-		// Check if auth already exists
+		
 		var existingAuth models.ServiceAuth
 		if err := db.Where("service_id = ?", serviceID).First(&existingAuth).Error; err == nil {
-			// Update existing auth
+			
 			result := db.Model(&existingAuth).Updates(&models.ServiceAuth{
 				LoginURL:    req.LoginURL,
 				Username:    req.Username,
@@ -245,7 +258,7 @@ func manageServiceAuth(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Create new auth
+		
 		auth := models.ServiceAuth{
 			ServiceID:   uint(service.ID),
 			LoginURL:    req.LoginURL,
@@ -270,12 +283,14 @@ func manageServiceAuth(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// getServiceAuth handles GET /services/:id/auth
+
 func getServiceAuth(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		serviceID := c.Param("id")
+		serviceID, ok := parseID(c)
 
-		// Check access
+		if !ok { return }
+
+		
 		if !canAccessService(c, db, serviceID) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "you do not have access to this service"})
 			return
@@ -304,12 +319,12 @@ func getServiceAuth(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// deleteServiceAuth handles DELETE /services/:id/auth
+
 func deleteServiceAuth(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		serviceID := c.Param("id")
 
-		// Check permission
+		
 		if !canManageService(c, db, serviceID) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "you do not have permission to manage auth for this service"})
 			return
@@ -331,12 +346,20 @@ func deleteServiceAuth(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// Helper: check if user can view service details (owner or admin)
-func canAccessService(c *gin.Context, db *gorm.DB, serviceID string) bool {
+
+func canAccessService(c *gin.Context, db *gorm.DB, serviceID uint) bool {
 	userIDRaw, _ := c.Get("userID")
 	roleRaw, _ := c.Get("role")
-	userID := userIDRaw.(uint)
-	role := roleRaw.(string)
+
+	userID, ok := userIDRaw.(uint)
+	if !ok {
+		return false
+	}
+
+	role, ok := roleRaw.(string)
+	if !ok {
+		return false
+	}
 
 	if role == "admin" {
 		return true
@@ -346,14 +369,18 @@ func canAccessService(c *gin.Context, db *gorm.DB, serviceID string) bool {
 	if err := db.First(&service, serviceID).Error; err != nil {
 		return false
 	}
+
 	return service.OwnerID == userID
 }
 
-// Helper: check if user can manage auth for service (owner or admin)
 func canManageService(c *gin.Context, db *gorm.DB, serviceID string) bool {
 	userIDRaw, _ := c.Get("userID")
 	roleRaw, _ := c.Get("role")
-	userID := userIDRaw.(uint)
+	userID, ok := userIDRaw.(uint)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
+		return false
+	}
 	role := roleRaw.(string)
 
 	if role == "admin" {
@@ -367,12 +394,12 @@ func canManageService(c *gin.Context, db *gorm.DB, serviceID string) bool {
 	return service.OwnerID == userID
 }
 
-// updateService handles PUT /services/:id
+
 func updateService(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		serviceID := c.Param("id")
 
-		// Check permission
+		
 		if !canManageService(c, db, serviceID) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "no permission"})
 			return
@@ -413,12 +440,12 @@ func updateService(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// deleteService handles DELETE /services/:id
+
 func deleteService(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		serviceID := c.Param("id")
 
-		// Check permission
+		
 		if !canManageService(c, db, serviceID) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "no permission"})
 			return
@@ -430,7 +457,7 @@ func deleteService(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// delete related data
+		
 		db.Where("service_id = ?", service.ID).Delete(&models.ServiceAuth{})
 		db.Where("service_id = ?", service.ID).Delete(&models.Check{})
 
@@ -446,46 +473,65 @@ func deleteService(db *gorm.DB) gin.HandlerFunc {
 
 func getServiceStats(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		serviceID := c.Param("id")
+		serviceID, ok := parseID(c)
+		if !ok {
+			return
+		}
 
-		// Check access
 		if !canAccessService(c, db, serviceID) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "no access"})
 			return
 		}
 
-		var checks []models.Check
-		if err := db.Where("service_id = ?", serviceID).Find(&checks).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch checks"})
+		type Stats struct {
+			Total int64
+			Up    int64
+			Avg   float64
+		}
+
+		var stats Stats
+
+		err := db.Raw(`
+			SELECT 
+				COUNT(*) as total,
+				COALESCE(SUM(CASE WHEN status = 'UP' THEN 1 ELSE 0 END), 0) as up,
+				COALESCE(AVG(response_time), 0) as avg
+			FROM checks
+			WHERE service_id = ?
+		`, serviceID).Scan(&stats).Error
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch stats"})
 			return
 		}
 
-		if len(checks) == 0 {
+		if stats.Total == 0 {
 			c.JSON(http.StatusOK, gin.H{
-				"uptime":            0,
+				"uptime_percent":    0,
 				"avg_response_time": 0,
 				"total_checks":      0,
 			})
 			return
 		}
 
-		var upCount int
-		var totalTime int64
-
-		for _, check := range checks {
-			if check.Status == "UP" {
-				upCount++
-			}
-			totalTime += check.ResponseTime
-		}
-
-		uptime := float64(upCount) / float64(len(checks)) * 100
-		avgTime := totalTime / int64(len(checks))
+		uptime := float64(stats.Up) / float64(stats.Total) * 100
 
 		c.JSON(http.StatusOK, gin.H{
 			"uptime_percent":    uptime,
-			"avg_response_time": avgTime,
-			"total_checks":      len(checks),
+			"avg_response_time": stats.Avg,
+			"total_checks":      stats.Total,
 		})
 	}
+}
+
+func parseID(c *gin.Context) (uint, bool) {
+	idStr := c.Param("id")
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return 0, false
+	}
+
+	return uint(id), true
 }

@@ -1,3 +1,4 @@
+// db.go
 package database
 
 import (
@@ -18,7 +19,7 @@ func Connect(cfg *config.Database) *gorm.DB {
 
     log.Println("connected to database successfully")
 
-    // create tables
+    
     if err := db.AutoMigrate(&models.Service{}, &models.Check{}, &models.ServiceAuth{}, &models.User{}); err != nil {
         log.Fatalf("failed to run migrations: %v", err)
     }
