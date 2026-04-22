@@ -1,3 +1,4 @@
+// worker.go
 package worker
 
 import (
@@ -24,6 +25,7 @@ const (
 var alertLogger *log.Logger
 
 func init() {
+	
 	file, err := os.OpenFile("alerts.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		log.Printf("worker: failed to open alerts.log: %v", err)
@@ -49,6 +51,7 @@ func StartWithContext(ctx context.Context, db *gorm.DB) {
 			log.Println("worker: stopping gracefully")
 			return
 		case <-ticker.C:
+			log.Println("worker: checking services...")
 			var services []models.Service
 			if err := db.Find(&services).Error; err != nil {
 				log.Printf("worker: failed to fetch services: %v", err)
@@ -63,12 +66,17 @@ func StartWithContext(ctx context.Context, db *gorm.DB) {
 }
 
 func checkServices(db *gorm.DB, services []models.Service) {
+	sem := make(chan struct{}, 10) 
 	var wg sync.WaitGroup
 
 	for _, s := range services {
 		wg.Add(1)
+		sem <- struct{}{}
+
 		go func(service models.Service) {
 			defer wg.Done()
+			defer func() { <-sem }()
+
 			checkService(db, service)
 		}(s)
 	}
@@ -77,28 +85,31 @@ func checkServices(db *gorm.DB, services []models.Service) {
 }
 
 func checkService(db *gorm.DB, s models.Service) {
-	// Validate URL
-	if _, err := url.Parse(s.URL); err != nil {
+	
+	u, err := url.ParseRequestURI(s.URL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
 		log.Printf("worker: invalid URL %q: %v", s.URL, err)
 		return
 	}
 
-	// Check if this service requires authentication
-	var auth *models.ServiceAuth
+	
+	var auth models.ServiceAuth
 	if err := db.Where("service_id = ?", s.ID).First(&auth).Error; err == nil {
-		// Authentication exists, use authenticated client
-		checkServiceWithAuth(db, s, auth)
+		checkServiceWithAuth(db, s, &auth)
 		return
 	}
 
-	// No authentication needed, use regular client
+	
+	
+
+	
 	checkServiceWithoutAuth(db, s)
 }
 
 func checkServiceWithoutAuth(db *gorm.DB, s models.Service) {
 	jar, _ := cookiejar.New(nil)
 
-	// TLS configuration that skips certificate verification
+	
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
 	}
@@ -123,7 +134,7 @@ func checkServiceWithoutAuth(db *gorm.DB, s models.Service) {
 		return
 	}
 
-	// headers to bypass basic anti-bot protection
+	
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
@@ -137,6 +148,7 @@ func checkServiceWithoutAuth(db *gorm.DB, s models.Service) {
 
 	start := time.Now()
 	resp, err := client.Do(req)
+	
 	duration := time.Since(start).Milliseconds()
 
 	status := "UP"
@@ -159,7 +171,7 @@ func checkServiceWithoutAuth(db *gorm.DB, s models.Service) {
 }
 
 func checkServiceWithAuth(db *gorm.DB, s models.Service, auth *models.ServiceAuth) {
-	// Get authenticated client
+	
 	client, err := AuthenticatedClient(auth)
 	if err != nil {
 		log.Printf("worker: authentication failed for service %d: %v", s.ID, err)
@@ -169,7 +181,7 @@ func checkServiceWithAuth(db *gorm.DB, s models.Service, auth *models.ServiceAut
 		return
 	}
 
-	// Determine URL to check
+	
 	checkURL := auth.MonitorURL
 	if checkURL == "" {
 		checkURL = s.URL
@@ -210,7 +222,7 @@ func checkServiceWithAuth(db *gorm.DB, s models.Service, auth *models.ServiceAut
 }
 
 func recordCheck(db *gorm.DB, serviceID uint, status string, duration int64) error {
-	// Check previous state
+	
 	var lastCheck models.Check
 	err := db.Where("service_id = ?", serviceID).Order("created_at desc").First(&lastCheck).Error
 	if err == nil {
@@ -231,5 +243,20 @@ func recordCheck(db *gorm.DB, serviceID uint, status string, duration int64) err
 		Status:       status,
 		ResponseTime: duration,
 	}
+	if err := db.Create(check).Error; err != nil {
+    	return err
+	}
+
+	
+	db.Exec(`
+		DELETE FROM checks
+		WHERE id NOT IN (
+			SELECT id FROM checks
+			WHERE service_id = ?
+			ORDER BY created_at DESC
+			LIMIT 1000
+		)
+	`, serviceID)
 	return db.Create(check).Error
+	
 }
