@@ -44,14 +44,13 @@ func Register(db *gorm.DB) gin.HandlerFunc {
         var input struct {
             Username string `json:"username" binding:"required"`
             Password string `json:"password" binding:"required"`
-            Role     string `json:"role"` 
         }
         if err := c.BindJSON(&input); err != nil {
             c.JSON(400, gin.H{"error": "Invalid input"})
             return
         }
 
-        user := models.User{Username: input.Username, Role: input.Role}
+        user := models.User{Username: input.Username}
         if user.Role == "" { user.Role = "user" } 
 
         

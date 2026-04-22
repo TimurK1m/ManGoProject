@@ -34,8 +34,17 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, cfg *config.App){
 	r.POST("/register", Register(db))
 
 	
+	
 	protected := r.Group("/")
 	protected.Use(middleware.AuthMiddleware(cfg.JWT.Secret))
+	admin := protected.Group("/admin")
+	
+	admin.Use(middleware.AdminOnly())
+	{
+		admin.GET("/users", listUsers(db))
+		admin.PUT("/users/:id/demote", demoteUser(db))
+		admin.PUT("/users/:id/promote", promoteUser(db))
+	}
 	{
 		
 		protected.POST("/services", createService(db))
@@ -534,4 +543,82 @@ func parseID(c *gin.Context) (uint, bool) {
 	}
 
 	return uint(id), true
+}
+
+func promoteUser(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := parseID(c)
+		if !ok {
+			return
+		}
+
+		var user models.User
+		if err := db.First(&user, userID).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+
+		// уже админ?
+		if user.Role == "admin" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "user already admin"})
+			return
+		}
+
+		user.Role = "admin"
+
+		if err := db.Save(&user).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to promote user"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "user promoted to admin",
+			"user_id": user.ID,
+		})
+	}
+}
+
+func demoteUser(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := parseID(c)
+		if !ok {
+			return
+		}
+
+		var user models.User
+		if err := db.First(&user, userID).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+
+		user.Role = "user"
+
+		if err := db.Save(&user).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to demote user"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "user downgraded to user",
+		})
+	}
+}
+
+
+func listUsers(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var users []models.User
+
+		if err := db.Find(&users).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "failed to fetch users",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"count": len(users),
+			"users": users,
+		})
+	}
 }
