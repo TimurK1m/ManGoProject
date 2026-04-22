@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15
+    container_name: mango_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 112407
+      POSTGRES_DB: projectDB
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    container_name: mango_app
+    depends_on:
+      - db
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: db
+      DB_USER: postgres
+      DB_PASSWORD: 112407
+      DB_NAME: projectDB
+      DB_PORT: 5432
+      DB_SSLMODE: disable
+      SERVER_PORT: 8080
+      JWT_SECRET: super_secret_key
+    restart: always
+
+volumes:
+  pgdata:

@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	checkTimeout = 15 * time.Second
+	checkTimeout = 30 * time.Second
 )
 
 var alertLogger *log.Logger
