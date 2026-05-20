@@ -6,9 +6,10 @@ import "time"
 type Service struct {
     ID        uint      `gorm:"primaryKey" json:"id"`
     URL       string    `json:"url"`
-    OwnerID  uint      `json:"owner_id"`
-    CreatedAt time.Time `json:"created_at"`
-    UpdatedAt time.Time `json:"updated_at"`
+    OwnerID       uint      `json:"owner_id"`
+    CheckInterval int       `json:"check_interval" gorm:"default:30"`
+    CreatedAt     time.Time `json:"created_at"`
+    UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type Check struct {

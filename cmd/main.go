@@ -54,7 +54,7 @@ func main() {
     wg.Add(1)
     go func() {
         defer wg.Done()
-        workers.StartWithContext(workerCtx, db)
+        workers.StartWithContext(workerCtx, db, cfg)
     }()
 
     log.Println("starting server on port", cfg.Server.Port)

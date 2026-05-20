@@ -96,6 +96,12 @@ func createService(db *gorm.DB) gin.HandlerFunc {
 
 		
 		service.OwnerID = userID
+		
+		if service.CheckInterval == 0 {
+			service.CheckInterval = 30
+		} else if service.CheckInterval < 10 {
+			service.CheckInterval = 10
+		}
 
 		
 		result := db.Create(&service)
@@ -415,7 +421,8 @@ func updateService(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var req struct {
-			URL string `json:"url" binding:"required"`
+			URL           string `json:"url" binding:"required"`
+			CheckInterval int    `json:"check_interval"`
 		}
 
 		if err := c.BindJSON(&req); err != nil {
@@ -435,6 +442,13 @@ func updateService(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		service.URL = req.URL
+		
+		if req.CheckInterval > 0 {
+			if req.CheckInterval < 10 {
+				req.CheckInterval = 10
+			}
+			service.CheckInterval = req.CheckInterval
+		}
 
 		if err := db.Save(&service).Error; err != nil {
 			log.Printf("handlers: failed to update service: %v", err)

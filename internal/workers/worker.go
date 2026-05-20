@@ -2,8 +2,10 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"manGo/internal/config"
 	"manGo/internal/models"
 
 	"gorm.io/gorm"
@@ -23,6 +26,7 @@ const (
 )
 
 var alertLogger *log.Logger
+var workerConfig *config.App
 
 func init() {
 	
@@ -34,13 +38,14 @@ func init() {
 	alertLogger = log.New(file, "ALERT: ", log.Ldate|log.Ltime)
 }
 
-func Start(db *gorm.DB) {
+func Start(db *gorm.DB, cfg *config.App) {
 	ctx := context.Background()
-	StartWithContext(ctx, db)
+	StartWithContext(ctx, db, cfg)
 }
 
-func StartWithContext(ctx context.Context, db *gorm.DB) {
-	ticker := time.NewTicker(30 * time.Second)
+func StartWithContext(ctx context.Context, db *gorm.DB, cfg *config.App) {
+	workerConfig = cfg
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	log.Println("worker: started")
@@ -53,7 +58,15 @@ func StartWithContext(ctx context.Context, db *gorm.DB) {
 		case <-ticker.C:
 			log.Println("worker: checking services...")
 			var services []models.Service
-			if err := db.Find(&services).Error; err != nil {
+			err := db.Raw(`
+				SELECT * FROM services s
+				WHERE NOT EXISTS (
+					SELECT 1 FROM checks c 
+					WHERE c.service_id = s.id 
+					AND c.created_at >= NOW() - (s.check_interval * interval '1 second')
+				)
+			`).Scan(&services).Error
+			if err != nil {
 				log.Printf("worker: failed to fetch services: %v", err)
 				continue
 			}
@@ -128,7 +141,7 @@ func checkServiceWithoutAuth(db *gorm.DB, s models.Service) {
 	req, err := http.NewRequest("GET", s.URL, nil)
 	if err != nil {
 		log.Printf("worker: failed to create request for %q: %v", s.URL, err)
-		if err := recordCheck(db, s.ID, "DOWN", 0); err != nil {
+		if err := recordCheck(db, s, "DOWN", 0); err != nil {
 			log.Printf("worker: failed to create check for service %d: %v", s.ID, err)
 		}
 		return
@@ -165,7 +178,7 @@ func checkServiceWithoutAuth(db *gorm.DB, s models.Service) {
 		}
 	}
 
-	if err := recordCheck(db, s.ID, status, duration); err != nil {
+	if err := recordCheck(db, s, status, duration); err != nil {
 		log.Printf("worker: failed to create check for service %d: %v", s.ID, err)
 	}
 }
@@ -175,7 +188,7 @@ func checkServiceWithAuth(db *gorm.DB, s models.Service, auth *models.ServiceAut
 	client, err := AuthenticatedClient(auth)
 	if err != nil {
 		log.Printf("worker: authentication failed for service %d: %v", s.ID, err)
-		if err := recordCheck(db, s.ID, "DOWN", 0); err != nil {
+		if err := recordCheck(db, s, "DOWN", 0); err != nil {
 			log.Printf("worker: failed to create check for service %d: %v", s.ID, err)
 		}
 		return
@@ -190,7 +203,7 @@ func checkServiceWithAuth(db *gorm.DB, s models.Service, auth *models.ServiceAut
 	req, err := http.NewRequest("GET", checkURL, nil)
 	if err != nil {
 		log.Printf("worker: failed to create request for %q: %v", checkURL, err)
-		if err := recordCheck(db, s.ID, "DOWN", 0); err != nil {
+		if err := recordCheck(db, s, "DOWN", 0); err != nil {
 			log.Printf("worker: failed to create check for service %d: %v", s.ID, err)
 		}
 		return
@@ -216,30 +229,48 @@ func checkServiceWithAuth(db *gorm.DB, s models.Service, auth *models.ServiceAut
 		}
 	}
 
-	if err := recordCheck(db, s.ID, status, duration); err != nil {
+	if err := recordCheck(db, s, status, duration); err != nil {
 		log.Printf("worker: failed to create check for service %d: %v", s.ID, err)
 	}
 }
 
-func recordCheck(db *gorm.DB, serviceID uint, status string, duration int64) error {
+func recordCheck(db *gorm.DB, s models.Service, status string, duration int64) error {
 	
 	var lastCheck models.Check
-	err := db.Where("service_id = ?", serviceID).Order("created_at desc").First(&lastCheck).Error
+	err := db.Where("service_id = ?", s.ID).Order("created_at desc").First(&lastCheck).Error
+	
+	shouldAlert := false
+	var oldStatus string
+
 	if err == nil {
 		if lastCheck.Status != status {
-			msg := fmt.Sprintf("Service %d state changed: %s -> %s", serviceID, lastCheck.Status, status)
-			if alertLogger != nil {
-				alertLogger.Println(msg)
-			} else {
-				log.Println("ALERT:", msg)
-			}
+			shouldAlert = true
+			oldStatus = lastCheck.Status
 		}
-	} else if err != gorm.ErrRecordNotFound {
+	} else if err == gorm.ErrRecordNotFound {
+		shouldAlert = true
+		oldStatus = "PENDING"
+	} else {
 		log.Printf("worker: failed to fetch last check: %v", err)
 	}
 
+	if shouldAlert {
+		msg := fmt.Sprintf("%s state changed: %s -> %s", s.URL, oldStatus, status)
+		if alertLogger != nil {
+			alertLogger.Println(msg)
+		} else {
+			log.Println("ALERT:", msg)
+		}
+		
+		if workerConfig != nil && workerConfig.Telegram.BotToken != "" && workerConfig.Telegram.ChatID != "" {
+			go sendTelegramNotification(workerConfig.Telegram.BotToken, workerConfig.Telegram.ChatID, msg)
+		} else {
+			log.Println("worker: telegram config is missing, alert not sent")
+		}
+	}
+
 	check := &models.Check{
-		ServiceID:    serviceID,
+		ServiceID:    s.ID,
 		Status:       status,
 		ResponseTime: duration,
 	}
@@ -257,7 +288,24 @@ func recordCheck(db *gorm.DB, serviceID uint, status string, duration int64) err
 			ORDER BY created_at DESC
 			LIMIT 1000
 		)
-	`, serviceID, serviceID)
+	`, s.ID, s.ID)
 
 	return nil
+}
+
+func sendTelegramNotification(token, chatID, message string) {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
+	body, _ := json.Marshal(map[string]string{
+		"chat_id": chatID,
+		"text":    "🚨 " + message,
+	})
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		log.Printf("worker: failed to send telegram alert: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("worker: telegram API returned status %d", resp.StatusCode)
+	}
 }

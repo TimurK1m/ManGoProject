@@ -25,10 +25,16 @@ type JWT struct {
 	Secret string
 }
 
+type Telegram struct {
+	BotToken string
+	ChatID   string
+}
+
 type App struct {
 	Database Database
 	Server   Server
 	JWT      JWT
+	Telegram Telegram
 }
 
 func Load() *App {
@@ -47,6 +53,10 @@ func Load() *App {
 		},
 		JWT: JWT{
 			Secret: getEnv("JWT_SECRET", "super_secret_key"),
+		},
+		Telegram: Telegram{
+			BotToken: getEnv("TG_BOT_TOKEN", ""),
+			ChatID:   getEnv("TG_CHAT_ID", ""),
 		},
 	}
 }

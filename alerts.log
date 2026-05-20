@@ -1,2 +1,5 @@
 ALERT: 2026/04/22 12:21:17 Service 2 state changed: UP -> DOWN
 ALERT: 2026/04/22 12:24:17 Service 2 state changed: DOWN -> UP
+ALERT: 2026/05/21 02:22:53 Service 5 state changed: PENDING -> DOWN
+ALERT: 2026/05/21 02:25:40 https://httpstat.us/500 state changed: PENDING -> DOWN
+ALERT: 2026/05/21 02:25:59 https://github.com state changed: PENDING -> UP
