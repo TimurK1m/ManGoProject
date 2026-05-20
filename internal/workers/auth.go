@@ -18,7 +18,7 @@ func AuthenticatedClient(auth *models.ServiceAuth) (*http.Client, error) {
 	jar, _ := cookiejar.New(nil)
 
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: false,
 	}
 
 	client := &http.Client{

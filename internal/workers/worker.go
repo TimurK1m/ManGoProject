@@ -111,7 +111,7 @@ func checkServiceWithoutAuth(db *gorm.DB, s models.Service) {
 
 	
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: false,
 	}
 
 	client := &http.Client{
@@ -244,19 +244,20 @@ func recordCheck(db *gorm.DB, serviceID uint, status string, duration int64) err
 		ResponseTime: duration,
 	}
 	if err := db.Create(check).Error; err != nil {
-    	return err
+		return err
 	}
 
-	
+	// Оставляем только последние 1000 записей для данного сервиса
 	db.Exec(`
 		DELETE FROM checks
-		WHERE id NOT IN (
+		WHERE service_id = ?
+		AND id NOT IN (
 			SELECT id FROM checks
 			WHERE service_id = ?
 			ORDER BY created_at DESC
 			LIMIT 1000
 		)
-	`, serviceID)
-	return db.Create(check).Error
-	
+	`, serviceID, serviceID)
+
+	return nil
 }

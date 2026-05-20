@@ -89,8 +89,8 @@ func createService(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "URL is required"})
 			return
 		}
-		if _, err := url.Parse(service.URL); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid URL format"})
+		if parsed, err := url.ParseRequestURI(service.URL); err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid URL format: must start with http:// or https://"})
 			return
 		}
 
@@ -423,8 +423,8 @@ func updateService(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if _, err := url.Parse(req.URL); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid URL"})
+		if parsed, err := url.ParseRequestURI(req.URL); err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid URL: must start with http:// or https://"})
 			return
 		}
 
