@@ -48,6 +48,7 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB, cfg *config.App){
 	{
 		
 		protected.POST("/services", createService(db))
+		protected.PUT("/user/telegram", UpdateTelegram(db))
 		protected.GET("/services", listServices(db))
 		protected.GET("/services/:id/checks", getServiceChecks(db))
 

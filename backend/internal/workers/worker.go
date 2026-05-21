@@ -262,10 +262,15 @@ func recordCheck(db *gorm.DB, s models.Service, status string, duration int64) e
 			log.Println("ALERT:", msg)
 		}
 		
-		if workerConfig != nil && workerConfig.Telegram.BotToken != "" && workerConfig.Telegram.ChatID != "" {
-			go sendTelegramNotification(workerConfig.Telegram.BotToken, workerConfig.Telegram.ChatID, msg)
+		if workerConfig != nil && workerConfig.Telegram.BotToken != "" {
+			var user models.User
+			if err := db.First(&user, s.OwnerID).Error; err == nil && user.TelegramChatID != "" {
+				go sendTelegramNotification(workerConfig.Telegram.BotToken, user.TelegramChatID, msg)
+			} else if workerConfig.Telegram.ChatID != "" {
+				go sendTelegramNotification(workerConfig.Telegram.BotToken, workerConfig.Telegram.ChatID, msg)
+			}
 		} else {
-			log.Println("worker: telegram config is missing, alert not sent")
+			log.Println("worker: telegram bot token is missing, alert not sent")
 		}
 	}
 

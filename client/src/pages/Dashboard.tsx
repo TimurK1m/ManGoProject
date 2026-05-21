@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import { Link } from 'react-router-dom';
-import { Plus, Server, Activity, Trash2, ArrowRight } from 'lucide-react';
+import { Plus, Server, Trash2, ArrowRight, MessageCircle } from 'lucide-react';
 
 interface Service {
   id: number;
@@ -17,6 +17,9 @@ const Dashboard: React.FC = () => {
   const [newUrl, setNewUrl] = useState('');
   const [newInterval, setNewInterval] = useState('30');
   const [addError, setAddError] = useState('');
+  const [tgChatId, setTgChatId] = useState('');
+  const [showTg, setShowTg] = useState(false);
+  const [tgMsg, setTgMsg] = useState('');
 
   const fetchServices = async () => {
     try {
@@ -62,6 +65,17 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const handleTgSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.put('/user/telegram', { telegram_chat_id: tgChatId });
+      setTgMsg('Saved successfully!');
+      setTimeout(() => setTgMsg(''), 3000);
+    } catch (err) {
+      setTgMsg('Error saving Chat ID');
+    }
+  };
+
   if (loading) {
     return <div className="text-center py-20 text-slate-400">Loading services...</div>;
   }
@@ -73,11 +87,40 @@ const Dashboard: React.FC = () => {
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-slate-400">Monitor your web services in real-time</p>
         </div>
-        <button onClick={() => setShowAdd(!showAdd)} className="btn-primary">
-          <Plus size={20} />
-          Add Service
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowTg(!showTg)} className="btn-secondary">
+            <MessageCircle size={20} />
+            Alerts
+          </button>
+          <button onClick={() => setShowAdd(!showAdd)} className="btn-primary">
+            <Plus size={20} />
+            Add Service
+          </button>
+        </div>
       </div>
+
+      {showTg && (
+        <div className="glass-panel mb-8 animate-[pulse_0.2s_ease-out_1]">
+          <h2 className="text-lg mb-4 flex items-center gap-2"><MessageCircle size={20}/> Telegram Alerts</h2>
+          <form onSubmit={handleTgSave} className="flex flex-col md:flex-row gap-4 items-start">
+            <div className="flex-1 w-full max-w-md">
+              <input
+                type="text"
+                className="input-field mb-0"
+                placeholder="Enter your Telegram Chat ID"
+                value={tgChatId}
+                onChange={(e) => setTgChatId(e.target.value)}
+              />
+              <p className="text-xs text-slate-400 mt-2">Get your Chat ID from @userinfobot</p>
+              {tgMsg && <p className="text-emerald-400 text-sm mt-1">{tgMsg}</p>}
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" className="btn-primary">Save</button>
+              <button type="button" onClick={() => setShowTg(false)} className="btn-secondary">Close</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {showAdd && (
         <div className="glass-panel mb-8 animate-[pulse_0.2s_ease-out_1]">

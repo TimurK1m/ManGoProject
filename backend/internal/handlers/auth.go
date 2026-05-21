@@ -67,3 +67,33 @@ func Register(db *gorm.DB) gin.HandlerFunc {
         c.JSON(201, gin.H{"message": "User created successfully"})
     }
 }
+
+func UpdateTelegram(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userIDRaw, exists := c.Get("userID")
+		if !exists {
+			c.JSON(401, gin.H{"error": "unauthorized"})
+			return
+		}
+		userID, ok := userIDRaw.(uint)
+		if !ok {
+			c.JSON(401, gin.H{"error": "invalid user"})
+			return
+		}
+
+		var input struct {
+			TelegramChatID string `json:"telegram_chat_id"`
+		}
+		if err := c.BindJSON(&input); err != nil {
+			c.JSON(400, gin.H{"error": "Invalid input"})
+			return
+		}
+
+		if err := db.Model(&models.User{}).Where("id = ?", userID).Update("telegram_chat_id", input.TelegramChatID).Error; err != nil {
+			c.JSON(500, gin.H{"error": "Failed to update telegram chat id"})
+			return
+		}
+
+		c.JSON(200, gin.H{"message": "Telegram Chat ID updated"})
+	}
+}

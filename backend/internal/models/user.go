@@ -8,11 +8,12 @@ import (
 )
 
 type User struct {
-    ID        uint      `gorm:"primaryKey" json:"id"`
-    Username  string    `gorm:"uniqueIndex;not null" json:"username"`
-    Password  string    `gorm:"not null" json:"-"` 
-    Role      string    `gorm:"default:user" json:"role"` 
-    CreatedAt time.Time `json:"created_at"`
+    ID             uint      `gorm:"primaryKey" json:"id"`
+    Username       string    `gorm:"uniqueIndex;not null" json:"username"`
+    Password       string    `gorm:"not null" json:"-"` 
+    Role           string    `gorm:"default:user" json:"role"` 
+    TelegramChatID string    `json:"telegram_chat_id"`
+    CreatedAt      time.Time `json:"created_at"`
 }
 
 

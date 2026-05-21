@@ -12,6 +12,8 @@ A production-ready Go service monitoring application that continuously checks th
 - **Error Handling**: Comprehensive error handling and logging
 - **Input Validation**: URL validation and request validation
 - **Configuration Management**: Environment variable support for configuration
+- **Authentication**: JWT-based user authentication and multi-tenant isolation
+- **Telegram Alerts**: Instant notifications when services go UP or DOWN
 
 ## Project Structure
 
@@ -84,6 +86,18 @@ go run cmd/main.go
 ```
 
 The server will start on the configured port (default: 8080).
+
+### 5. (Alternative) Run with Docker Compose
+
+You can easily spin up the entire stack (PostgreSQL, Backend API, and Frontend) using Docker Compose.
+
+```bash
+docker-compose up -d --build
+```
+
+- **Frontend**: Available at `http://localhost:80`
+- **Backend API**: Available at `http://localhost:8080`
+- **Database**: PostgreSQL on port `5432`
 
 ## API Endpoints
 
@@ -232,14 +246,12 @@ Example logs:
 ## Known Limitations
 
 - Check history is stored indefinitely (consider adding cleanup for old records in production)
-- No authentication/authorization (add if exposing publicly)
 - Single-instance deployment (no clustering)
 
 ## Future Enhancements
 
 - Database cleanup for old check records
-- Authentication and authorization
-- Webhook notifications on status changes
+- Webhooks integrations
 - Prometheus metrics export
 - Health check statistics (uptime percentage, avg response time)
 - Service grouping/tagging
